@@ -36,7 +36,7 @@ This repository is intentionally prepared as a **professional code/notebook rele
 The table above is the concise contract view. The diagram below shows the end-to-end analysis flow and where the RPPA branch rejoins the downstream interpretation path.
 
 ```mermaid
-flowchart LR
+flowchart TD
 	N00[00 Ambient RNA correction] --> N01[01 Ingest QC annotation]
 	N01 --> N02[02 Mouse prep for comparison]
 	N02 --> N03[03 Build human MG reference]
