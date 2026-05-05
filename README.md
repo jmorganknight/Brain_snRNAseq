@@ -37,6 +37,7 @@ For practical reruns, we recommend starting from Notebook 03 onward using the pu
 - The human reference itself will not be redistributed through GEO in this repository release; it is derived from the Prater Green PU.1 reference resource and should be obtained from the corresponding Synapse-hosted source.
 - RPPA inputs used in the integrated branch will be packaged with the other mouse release data in the same GEO-associated dataset bundle.
 - Notebooks 00 and 01 are included primarily for full transparency and provenance of the full end-to-end pipeline.
+- Note: Notebook 00 (scAR ambient RNA correction) involves a stochastic process. The random state was not fixed in the released version of this notebook, so reruns may produce slightly different corrected counts. The NB02-derived h5ad release artifacts represent the exact objects used in the manuscript analysis and are the recommended reproducible starting point.
 
 ## Pipeline Stages
 
