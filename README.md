@@ -90,21 +90,7 @@ r_package_versions.txt              # R package versions
 ## Data and Licensing Notes
 
 This repository is intended to share **code + notebooks + contracts**.
-Large data files and generated outputs are excluded by `.gitignore`.
+Large data files and generated outputs are excluded, but may be acquired through the associated publication.
 
 Please cite and use third-party datasets/resources in accordance with their original licenses and terms.
 
-## Publish To GitHub
-
-From the `Analysis/` directory:
-
-```bash
-git init
-git add Notebooks README.md README_NOTEBOOK_VALIDATION.md test_notebook_integrity.py requirements*.txt R_sessionInfo.txt r_package_versions.txt .gitignore
-git commit -m "Initial release: notebook pipeline and documentation"
-git branch -M main
-git remote add origin https://github.com/<your-user>/<your-repo>.git
-git push -u origin main
-```
-
-If the remote already exists, skip `git init` and `git remote add origin`.
