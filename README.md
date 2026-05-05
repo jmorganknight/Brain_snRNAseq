@@ -31,6 +31,30 @@ This repository is intentionally prepared as a **professional code/notebook rele
 | 14 | `14_Multiomic_Pseudobulk_RPPA.ipynb` | RNA-RPPA integration | `Results/multiomic/*` |
 | 15 | `15_TF_GWAS_Analysis.ipynb` | TF-GWAS and AD summary | GWAS/OT AD support outputs |
 
+## Pipeline Diagram
+
+The table above is the concise contract view. The diagram below shows the end-to-end analysis flow and where the RPPA branch rejoins the downstream interpretation path.
+
+```mermaid
+flowchart LR
+	N00[00 Ambient RNA correction] --> N01[01 Ingest QC annotation]
+	N01 --> N02[02 Mouse prep for comparison]
+	N02 --> N03[03 Build human MG reference]
+	N03 --> N04[04 Human-mouse microglia overlap]
+	N04 --> N05[05 Homeostatic human-mouse overlap]
+	N05 --> N06[06 Homeostatic microglia analysis]
+	N06 --> N07[07 Analysis preflight]
+	N07 --> N08[08 Celltype counts and significance]
+	N08 --> N09[09 DGE run once]
+	N09 --> N10[10 DGE visualization]
+	N10 --> N11[11 DGE pathway analysis]
+	N11 --> N12[12 GSEA visualization and custom lists]
+	N02 --> N13[13 RPPA analysis]
+	N13 --> N14[14 Multiomic pseudobulk RPPA]
+	N14 --> N15[15 TF GWAS analysis]
+	N12 --> N15
+```
+
 ## Recommended Execution Order
 
 1. `Notebooks/00_Ambient_RNA_correction.ipynb`
