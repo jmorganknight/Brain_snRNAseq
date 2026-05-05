@@ -1,0 +1,155 @@
+
+
+
+
+---
+title: "03_Human_Mouse_Microglia_Overlap"
+author: "jmk"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+## Note: The input analysis for this was derived from 02_Brain_snRNAseq_Mouse_PrepForComparison.ipynb
+## Overlaps mouse microglica with PU1 sorted microglia...
+
+```{r}
+library(Seurat)
+library(ggplot2)
+library(schard)
+```
+
+
+
+# Load ref and query datasets
+
+```{r}
+human_ref <- readRDS("/media/drive_c/Project_Brain_snRNAseq/Analysis/Human/human_MG_reference.rds")
+mouse_query <- schard::h5ad2seurat(  "/media/drive_c/Project_Brain_snRNAseq/Analysis/Results/Microglia_analysis/integrated_mouseMG_data.h5ad")
+
+```
+
+
+
+# Finding intersections
+
+```{r}
+
+human_genes <- rownames(human_ref[["integrated"]]@scale.data)
+shared_genes <- intersect(human_genes, rownames(mouse_query))
+length(shared_genes)  # should be ~3700
+
+
+human_ref_sub <- subset(human_ref, features = shared_genes)
+mouse_query_sub <- subset(mouse_query, features = shared_genes)
+
+DefaultAssay(human_ref_sub) <- "integrated"
+DefaultAssay(mouse_query_sub) <- "RNA"
+
+
+```
+
+
+
+```{r}
+human_ref_sub <- RunUMAP(
+  human_ref_sub,
+  reduction = "pca",
+  dims = 1:30,
+  return.model = TRUE
+)
+
+```
+
+
+```{r}
+DimPlot(human_ref_sub, reduction = "umap", group.by = "cluster_id", label = TRUE) +
+  ggtitle("UMAP of Human Microglia Reference")
+
+```
+
+
+# transfer anchor identification
+
+```{r}
+anchors <- FindTransferAnchors(
+  reference = human_ref_sub,
+  query = mouse_query_sub,
+  reference.assay = "integrated",
+  query.assay = "RNA",
+  reduction = "pcaproject",
+  reference.reduction = "pca",
+  dims = 1:30)
+```
+
+
+```{r}
+mouse_query_mapped <- MapQuery(
+  anchorset = anchors,
+  query = mouse_query_sub,
+  reference = human_ref_sub,
+  refdata = list(cluster_id = "cluster_id"),
+  reference.reduction = "pca",
+  reduction.model = "umap"
+)
+
+```
+
+
+
+```{r}
+# Plot human UMAP with clusters
+p1 <- DimPlot(human_ref_sub, reduction = "umap", group.by = "cluster_id", label = TRUE) + ggtitle("Human Reference")
+
+# Plot projected mouse query
+p2 <- DimPlot(mouse_query_mapped, reduction = "ref.umap", group.by = "predicted.cluster_id", label = TRUE) + ggtitle("Mapped Mouse")
+
+# Side-by-side
+p1 + p2
+
+```
+
+
+
+```{r}
+library(ggplot2)
+library(viridis)
+
+# 1. Extract UMAP embeddings for both human and mouse datasets
+human_umap <- Embeddings(human_ref_sub, "umap")
+mouse_umap <- Embeddings(mouse_query_mapped, "ref.umap")
+
+# 2. Create a data frame containing UMAP coordinates, species label, and human cluster information
+combined_df <- data.frame(
+  UMAP_1 = c(human_umap[, 1], mouse_umap[, 1]),
+  UMAP_2 = c(human_umap[, 2], mouse_umap[, 2]),
+  species = c(rep("Human", nrow(human_umap)), rep("Mouse", nrow(mouse_umap))),
+  cluster_id = c(human_ref_sub$cluster_id, rep(NA, nrow(mouse_umap)))  # Only human has clusters
+)
+
+# 3. Plot the combined data
+p <- ggplot(combined_df, aes(x = UMAP_1, y = UMAP_2)) +
+  # Plot human cells with cluster_id color
+  geom_point(data = subset(combined_df, species == "Human"), aes(color = as.factor(cluster_id)), size = 1.5) +
+  # Plot mouse cells as large red dots
+  geom_point(data = subset(combined_df, species == "Mouse"), color = "red", size = 3) +
+  ggtitle("Human Cells Colored by Cluster and Mouse as Red Dots") +
+  scale_color_viridis_d() +
+  theme_minimal() +
+  theme(legend.title = element_blank())
+
+# 4. Print plot
+print(p)
+
+# 5. Save the plot as SVG
+ggsave(
+  filename = "/media/drive_c/Project_Brain_snRNAseq/Analysis/Results/Microglia_analysis/human_mouse_combined_umap.svg",
+  plot = p,
+  width = 8,
+  height = 6,
+  units = "in"
+)
+
+
+```
+
+

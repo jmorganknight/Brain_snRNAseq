@@ -1,0 +1,474 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+
+
+
+
+```{r}
+library(Seurat)
+library(ggplot2)
+library(schard)
+library(dplyr)
+library(ggplot2)
+library(VennDiagram)
+library(clusterProfiler)
+library(org.Hs.eg.db)
+library(enrichplot)
+
+```
+
+
+
+
+
+# Load ref and query datasets
+
+```{r}
+homeostat_ref <- readRDS("/media/drive_c/Project_Brain_snRNAseq/Analysis/Human/human_homeostat_ref.rds")
+mouse_query <- schard::h5ad2seurat(  "/media/drive_c/Project_Brain_snRNAseq/Analysis/Results/Microglia_analysis/integrated_mouseMG_data.h5ad")
+
+```
+
+
+
+
+# Finding overlap between the genes
+
+```{r}
+
+# 1. Get shared genes
+homeo_genes <- rownames(homeostat_ref[["integrated"]]@scale.data)
+shared_sub_genes <- intersect(human_genes, rownames(mouse_query))
+length(shared_sub_genes)  # should be ~3700
+
+# 2. Subset the Seurat objects (gene-level subset, preserves cell-level metadata)
+homeo_ref_sub <- homeostat_ref
+homeo_ref_sub <- homeo_ref_sub[shared_sub_genes, ]
+
+mouse_sub_query_sub <- mouse_query
+mouse_sub_query_sub <- mouse_sub_query_sub[shared_sub_genes, ]
+
+# 3. Double-check metadata is preserved
+stopifnot("subcluster_id" %in% colnames(homeo_ref_sub@meta.data))
+
+# 4. Set assays
+DefaultAssay(homeo_ref_sub) <- "integrated"
+DefaultAssay(mouse_sub_query_sub) <- "RNA"
+
+
+```
+
+
+
+```{r}
+homeo_ref_sub <- RunUMAP(
+  homeo_ref_sub,
+  reduction = "pca",
+  dims = 1:30,
+  return.model = TRUE
+)
+```
+
+
+
+
+
+```{r}
+DimPlot(homeo_ref_sub, reduction = "umap", group.by = "subcluster_id", label = TRUE) +
+  ggtitle("UMAP of Homeostatic Microglia Reference")
+```
+
+
+
+```{r}
+anchors_sub <- FindTransferAnchors(
+  reference = homeo_ref_sub,
+  query = mouse_sub_query_sub,
+  reference.assay = "integrated",
+  query.assay = "RNA",
+  reduction = "pcaproject",
+  reference.reduction = "pca",
+  dims = 1:30)
+```
+
+
+```{r}
+mouse_sub_query_mapped <- MapQuery(
+  anchorset = anchors_sub,
+  query = mouse_sub_query_sub,
+  reference = homeo_ref_sub,
+  refdata = list(cluster_id = "subcluster_id"),
+  reference.reduction = "pca",
+  reduction.model = "umap"
+)
+```
+
+
+## Note: extracting the murine 1.5 cluster barcodes to run GSEA in python to keep consistent with the other GSEA analysis
+
+```{r}
+# Subset metadata
+meta_data <- mouse_sub_query_mapped@meta.data
+
+# Get barcodes where predicted.cluster_id == "1.5"
+barcodes_cluster_1.5 <- rownames(meta_data[meta_data$predicted.cluster_id == "1.5", ])
+
+# Save as a proper CSV with column name
+barcode_df <- data.frame(Barcode = barcodes_cluster_1.5)
+
+write.csv(barcode_df,
+          "/media/drive_c/Project_Brain_snRNAseq/Analysis/Results/Microglia_analysis/Cluster1.5_barcodes.csv",
+          row.names = FALSE)
+
+# Preview
+head(barcode_df)
+
+
+```
+
+
+
+```{r}
+
+# Get UMAP axis limits from the homeostatic reference
+umap_coords <- Embeddings(homeo_ref_sub, reduction = "umap")
+x_limits <- range(umap_coords[, 1])
+y_limits <- range(umap_coords[, 2])
+
+# Plot human reference UMAP with subcluster labels
+p1 <- DimPlot(homeo_ref_sub, reduction = "umap", group.by = "subcluster_id", label = TRUE) +
+  ggtitle("Human Reference") +
+  coord_fixed() +
+  xlim(x_limits) + ylim(y_limits)
+
+# Plot mouse query mapped onto reference UMAP with predicted cluster labels
+p2 <- DimPlot(mouse_sub_query_mapped, reduction = "ref.umap", group.by = "predicted.cluster_id", label = TRUE) +
+  ggtitle("Mapped Mouse") +
+  coord_fixed() +
+  xlim(x_limits) + ylim(y_limits)
+
+# Combine plots
+combined_plot <- p1 + p2
+
+# Display side-by-side
+print(combined_plot)
+
+# Save side-by-side as SVG
+svg("/media/drive_c/Project_Brain_snRNAseq/Analysis/Results/Microglia_analysis/Cluster1.5_MG_UMAP_sidebyside.svg",
+    width = 12, height = 6)
+print(combined_plot)  # render patchwork inside svg device
+dev.off()
+
+
+
+```
+
+
+
+
+```{r}
+# Plot the mapped mouse query cells colored by sample
+p_sample <- DimPlot(
+  mouse_sub_query_mapped,
+  reduction = "ref.umap",
+  group.by = "Sample",
+  label = FALSE
+) +
+  ggtitle("Mapped Mouse Cells by Sample") +
+  coord_fixed()
+
+# Save as PDF
+# ggsave(
+#   "/media/drive_c/Project_Brain_snRNAseq/Analysis/Human/all_MG_UMAP_mouse_by_sample.pdf",
+#   plot = p_sample,
+#   width = 8,
+#   height = 6
+# )
+
+# plot
+print(p_sample)
+
+```
+
+
+
+
+
+```{r}
+
+# Add sample type based on Sample column
+mouse_sub_query_mapped$sample_type <- ifelse(grepl("Mock", mouse_sub_query_mapped$Sample), "Mock",
+                                              ifelse(grepl("OG", mouse_sub_query_mapped$Sample), "OG", "Other"))
+
+# Compute percent of cells per cluster within each sample
+mouse_summary <- mouse_sub_query_mapped@meta.data %>%
+  filter(sample_type %in% c("Mock", "OG")) %>%
+  group_by(Sample, sample_type, predicted.cluster_id) %>%
+  summarise(n_cells = n(), .groups = "drop") %>%
+  group_by(Sample) %>%
+  mutate(total_in_sample = sum(n_cells)) %>%
+  ungroup() %>%
+  mutate(percent = round(100 * n_cells / total_in_sample, 2))
+
+# Plot: % of cells per sample, grouped by cluster and split by sample type
+ggplot(mouse_summary, aes(x = predicted.cluster_id, y = percent, fill = Sample)) +
+  geom_bar(stat = "identity", position = position_dodge()) +
+  facet_wrap(~ sample_type, scales = "free_x") +
+  labs(
+    title = "Percent of Cells per Cluster by Sample (Mock vs OG)",
+    x = "Predicted Cluster",
+    y = "Percent of Cells",
+    fill = "Sample"
+  ) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+
+
+
+```{r}
+mouse_sub_query_mapped$predicted.cluster_id <- as.character(mouse_sub_query_mapped$predicted.cluster_id)
+mouse_sub_query_mapped$Sample <- as.character(mouse_sub_query_mapped$Sample)
+
+# Create summary table: number of cells per cluster per sample
+cell_counts_table <- mouse_sub_query_mapped@meta.data %>%
+  group_by(predicted.cluster_id, Sample) %>%
+  summarise(cell_count = n(), .groups = "drop")
+
+# View the table
+print(cell_counts_table)
+```
+
+
+
+```{r}
+# Add sample type metadata
+mouse_sub_query_mapped$sample_type <- ifelse(grepl("Mock", mouse_sub_query_mapped$Sample), "Mock",
+                                             ifelse(grepl("OG", mouse_sub_query_mapped$Sample), "OG", "Other"))
+
+# Filter for cluster 1.5 only
+cluster_1_5_data <- mouse_sub_query_mapped@meta.data %>%
+  filter(predicted.cluster_id == "1.5", sample_type %in% c("Mock", "OG"))
+
+# Count cells per sample
+cluster_1_5_counts <- cluster_1_5_data %>%
+  group_by(Sample, sample_type) %>%
+  summarise(n_cells = n(), .groups = "drop")
+
+# Plot
+ggplot(cluster_1_5_counts, aes(x = Sample, y = n_cells, fill = sample_type)) +
+  geom_bar(stat = "identity") +
+  labs(
+    title = "Cell Counts in Cluster 1.5 by Sample",
+    x = "Sample",
+    y = "Number of Cells",
+    fill = "Sample Type"
+  ) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+
+
+# Mouse Cluster 1.5 DEG analysis
+
+
+```{r}
+# Add sample type metadata (if not already added)
+mouse_sub_query_mapped$sample_type <- ifelse(grepl("Mock", mouse_sub_query_mapped$Sample), "Mock",
+                                             ifelse(grepl("OG", mouse_sub_query_mapped$Sample), "OG", "Other"))
+
+# Subset to cluster 1.5 cells
+cluster_1_5 <- subset(mouse_sub_query_mapped, subset = predicted.cluster_id == "1.5" & sample_type %in% c("Mock", "OG"))
+
+# Set sample type as identity class for comparison
+Idents(cluster_1_5) <- "sample_type"
+
+# Run differential expression: OG vs Mock
+dge_1_5 <- FindMarkers(
+  object = cluster_1_5,
+  ident.1 = "OG",
+  ident.2 = "Mock",
+  assay = "RNA",          # Adjust if your default assay is different
+  slot = "data",          # Use "data" for log-normalized, or "counts" if using raw
+  logfc.threshold = 0.25, # Optional: minimum log fold change
+  min.pct = 0.1           # Optional: genes expressed in at least 10% of cells
+)
+
+# View top results
+head(dge_1_5)
+
+write.csv(dge_1_5, file = "/media/drive_c/Project_Brain_snRNAseq/Analysis/Human/Cluster1.5_mouse_OG_vs_Mock_DGE.csv")
+
+```
+
+
+
+
+# Human cluster 1.5 DEG analysis
+
+
+```{r}
+
+# Subset cells where subcluster_id is "1.5"
+cluster_1.5_cells <- subset(homeostat_ref, subset = subcluster_id == "1.5")
+
+# Confirm the sample group labels exist
+unique(cluster_1.5_cells$Study_Designation)
+
+# Set identity for comparison
+Idents(cluster_1.5_cells) <- "Study_Designation"
+
+# Run differential expression: AD vs Ctrl
+deg_cluster_1.5 <- FindMarkers(
+  cluster_1.5_cells,
+  ident.1 = "AD",
+  ident.2 = "Ctrl",
+  group.by = "Study_Designation",
+  assay = "RNA",           # Adjust if you're using a different assay like "SCT"
+  slot = "data",           # Use "data" for log-normalized values
+  logfc.threshold = 0.25,
+  min.pct = 0.1,
+  test.use = "wilcox"
+)
+
+# Save results to CSV
+write.csv(
+  deg_cluster_1.5,
+  file = "/media/drive_c/Project_Brain_snRNAseq/Analysis/Human/Cluster1.5_Human_AD_vs_Ctrl_DEG.csv"
+)
+
+
+
+```
+
+
+
+
+
+```{r}
+
+# Filter DEGs by adjusted p-value < 0.05
+sig_mouse <- dge_1_5[dge_1_5$p_val < 0.05, ]
+sig_human <- deg_cluster_1.5[deg_cluster_1.5$p_val < 0.05, ]
+
+# Extract gene names
+genes_mouse <- rownames(sig_mouse)
+genes_human <- rownames(sig_human)
+
+# Create and draw the Venn diagram
+venn_plot <- venn.diagram(
+  x = list(Mouse = genes_mouse, Human = genes_human),
+  filename = NULL,
+  fill = c("lightblue", "pink"),
+  alpha = 0.5,
+  cex = 1.5,
+  cat.cex = 1.5,
+  main = "Significant DEGs Overlap (padj < 0.05): Mouse vs Human"
+)
+
+# Display in RStudio
+grid::grid.newpage()
+grid::grid.draw(venn_plot)
+
+# Optional: Save as PNG
+png("/media/drive_c/Project_Brain_snRNAseq/Analysis/Human/Mouse_vs_Human_DEG_Venn_sig.png", width = 800, height = 800)
+grid::grid.draw(venn_plot)
+dev.off()
+
+
+
+
+```
+
+# Export the overlap genes
+
+```{r}
+
+# Get overlapping gene names
+overlap_genes <- intersect(rownames(sig_mouse), rownames(sig_human))
+
+# View the list
+print(overlap_genes)
+
+# Write to CSV
+write.csv(overlap_genes, file = "/media/drive_c/Project_Brain_snRNAseq/Analysis/Human/Cluster1.5_mouse_human_overlap_genes.csv", row.names = FALSE)
+
+
+```
+
+
+
+
+# Run GSEA on full mouse DEG list (not used)
+
+```{r}
+# Rank genes by -log10(p-value) combined with logFC for better ranking
+dge_1_5$ranking <- -log10(dge_1_5$p_val) * sign(dge_1_5$avg_log2FC)
+
+# Create named vector
+gene_list <- sort(setNames(dge_1_5$ranking, rownames(dge_1_5)), decreasing = TRUE)
+
+# Run GSEA using GO Biological Process
+gsea_mouse_human <- gseGO(
+  geneList     = gene_list,
+  OrgDb        = org.Hs.eg.db,
+  ont          = "BP",
+  keyType      = "SYMBOL",
+  minGSSize    = 3,           # reduce minimum gene set size
+  maxGSSize    = 1000,
+  pvalueCutoff = 0.2,         # more lenient
+  verbose      = FALSE
+)
+
+# View top results
+head(gsea_mouse@result)
+
+# Plot top pathways
+
+dotplot(gsea_mouse, showCategory = 20)
+```
+
+
+
+# Save the Cluster 1.5 barcodes for later
+
+```{r}
+
+human_1_5_barcodes <- colnames(homeostat_ref)[homeostat_ref$subcluster_id == "1.5"]
+write.csv(
+  data.frame(Barcode = human_1_5_barcodes),
+  file = "/media/drive_c/Project_Brain_snRNAseq/Analysis/Human/barcodes_cluster_1.5_human.csv",
+  row.names = FALSE
+)
+
+
+mouse_1_5_barcodes <- colnames(mouse_sub_query_mapped)[mouse_sub_query_mapped$predicted.cluster_id == "1.5"]
+write.csv(
+  data.frame(Barcode = mouse_1_5_barcodes),
+  file = "/media/drive_c/Project_Brain_snRNAseq/Analysis/Human/barcodes_cluster_1.5_mouse.csv",
+  row.names = FALSE
+)
+
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
