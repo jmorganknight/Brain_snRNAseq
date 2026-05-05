@@ -41,7 +41,7 @@ For practical reruns, we recommend starting from Notebook 03 onward using the pu
 | 01 | `01_Ingest.ipynb` | Ingest + QC + annotation | `adatas/*nb01*.h5ad`, `Mapping/mapping_output_nb01.csv` |
 | 02 | `02_Mouse_PrepForComparison.ipynb` | Mouse prep for cross-comparison | `adatas/brain_*_allgenes.h5ad` |
 | 03-05 | `03-05` (`.Rmd`) | Human reference + overlap mapping | Human and overlap reference artifacts |
-| 06 | `06_Homeostatic_Microglia_Analysis.ipynb` | Homeostatic transfer/trends | NB06 analysis artifacts |
+| 06 | `06_Homeostatic_Microglia_Analysis.ipynb` | Homeostatic transfer/trends | `Microglia_analysis/mouse_ad_like_probabilities_with_barcodes_nb06.csv`, `Microglia_analysis/model/*_nb06.*` |
 | 07 | `07_Analysis_Preflight.ipynb` | Handoff contract checks | Readiness checks for 08-15 |
 | 08-12 | `08-12` (`.ipynb`) | Counts, DGE, pathway, GSEA | Differential and enrichment outputs |
 | 13 | `13_RPPA_analysis.ipynb` | RPPA preprocessing | `RPPA/final_simple/for_multiomic/*` |
