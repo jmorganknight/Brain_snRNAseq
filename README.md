@@ -13,24 +13,29 @@ This repository is intentionally prepared as a **professional code/notebook rele
 
 - Ambient RNA correction
 - Ingest, QC, integration, and annotation
-- Cross-species microglia overlap and homeostatic analysis
+- Cross-species microglia overlap and homeostatic analysis, including donor-aware MLP-based AD-like score transfer in Notebook 06
 - Counts, DGE, pathway, and GSEA downstream analysis
 - RPPA preprocessing and RNA-RPPA integration
 - TF-GWAS follow-up (Open Targets + Enrichr)
 
 ## Recommended Primary Input
 
-For end-to-end reproducibility, we recommend using the all-cells/all-genes processed AnnData file from notebook 02:
+For practical reruns, we recommend using the NB02-derived processed AnnData release artifacts, rather than rebuilding from raw ingest:
 - `adatas/brain_allcells_allgenes.h5ad`
+- `adatas/mouse_microglia_humanized_nb02.h5ad`
 
-This file is the canonical output of `02_Mouse_PrepForComparison.ipynb` and is the preferred starting object distributed with the associated publication materials.
+These are canonical outputs of `02_Mouse_PrepForComparison.ipynb`.
+
+- `brain_allcells_allgenes.h5ad` is the preferred primary input for the downstream analysis branch and will be distributed through GEO once the manuscript is published.
+- `mouse_microglia_humanized_nb02.h5ad` is the NB02 handoff object used by the cross-species reference/overlap branch (`03-06`).
 
 ## Data Availability and Recommended Start Point
 
-For practical reruns, we recommend starting from Notebook 03 onward using the publication release artifacts.
+For practical reruns, we recommend starting from Notebook 03 onward using the publication release artifacts, including the NB02-derived h5ad handoff files.
 
-- Human-reference and downstream inputs used from Notebooks 03+ will be made publicly available through GEO.
-- RPPA inputs/outputs used in the integrated branch will be released in the same GEO-associated dataset package.
+- The recommended processed mouse inputs will be released through GEO once the manuscript is published.
+- The human reference itself will not be redistributed through GEO in this repository release; it is derived from the Prater Green PU.1 reference resource and should be obtained from the corresponding Synapse-hosted source.
+- RPPA inputs used in the integrated branch will be packaged with the other mouse release data in the same GEO-associated dataset bundle.
 - Notebooks 00 and 01 are included primarily for full transparency and provenance of the full end-to-end pipeline.
 
 ## Pipeline Stages
@@ -40,8 +45,8 @@ For practical reruns, we recommend starting from Notebook 03 onward using the pu
 | 00 | `00_Ambient_RNA_correction.ipynb` | Ambient correction | `scAR/h5ad/*_scar_corrected.h5ad` |
 | 01 | `01_Ingest.ipynb` | Ingest + QC + annotation | `adatas/*nb01*.h5ad`, `Mapping/mapping_output_nb01.csv` |
 | 02 | `02_Mouse_PrepForComparison.ipynb` | Mouse prep for cross-comparison | `adatas/brain_*_allgenes.h5ad` |
-| 03-05 | `03-05` (`.Rmd`) | Human reference + overlap mapping | Human and overlap reference artifacts |
-| 06 | `06_Homeostatic_Microglia_Analysis.ipynb` | Homeostatic transfer/trends | `Microglia_analysis/mouse_ad_like_probabilities_with_barcodes_nb06.csv`, `Microglia_analysis/model/*_nb06.*` |
+| 03-05 | `03-05` (`.Rmd`) | Human reference + overlap mapping from NB02 handoff objects | Human and overlap reference artifacts |
+| 06 | `06_Homeostatic_Microglia_Analysis.ipynb` | Homeostatic transfer/trends and MLP-based AD-like scoring | `Microglia_analysis/mouse_ad_like_probabilities_with_barcodes_nb06.csv`, `Microglia_analysis/model/*_nb06.*` |
 | 07 | `07_Analysis_Preflight.ipynb` | Handoff contract checks | Readiness checks for 08-15 |
 | 08-12 | `08-12` (`.ipynb`) | Counts, DGE, pathway, GSEA | Differential and enrichment outputs |
 | 13 | `13_RPPA_analysis.ipynb` | RPPA preprocessing | `RPPA/final_simple/for_multiomic/*` |
@@ -74,6 +79,15 @@ flowchart TD
 
 ## Recommended Execution Order
 
+Recommended publication-style rerun:
+
+1. Start at `Notebooks/03_Build_Human_MG_Reference_From_Prater_Green.Rmd` using the NB02-derived release artifacts `adatas/mouse_microglia_humanized_nb02.h5ad` and `adatas/brain_allcells_allgenes.h5ad`.
+2. Continue through `Notebooks/04_Human_Mouse_Microglia_Overlap.Rmd`, `Notebooks/05_Homeostati_Human_Mouse_Overlap.Rmd`, and `Notebooks/06_Homeostatic_Microglia_Analysis.ipynb`.
+3. Use `Notebooks/07_Analysis_Preflight.ipynb` to validate the downstream branch. Notebook 07 and the downstream all-cell analysis branch use `adatas/brain_allcells_allgenes.h5ad` directly.
+4. Continue through Notebooks 08-15 as needed for counts, DGE, pathway, GSEA, multiomic, and TF-GWAS analysis.
+
+Full provenance run:
+
 1. `Notebooks/00_Ambient_RNA_correction.ipynb`
 2. `Notebooks/01_Ingest.ipynb`
 3. `Notebooks/02_Mouse_PrepForComparison.ipynb`
@@ -93,13 +107,15 @@ flowchart TD
 
 ## Environment
 
-Preferred Python runtime is `mlenv`.
+Preferred local Python runtime is `mlenv`, but it is not strictly required if you use the provided Docker workflow or create an equivalent Python 3.10 environment with the documented dependencies.
 
 ```bash
 mlenv
 python -V
 python -m pip install -r requirements.mlenv.lock.txt
 ```
+
+For containerized execution, use the Docker setup in this repository instead of reproducing the local `mlenv` directly.
 
 ### Tooling and Version Sweep (for Reproducibility)
 
@@ -246,7 +262,7 @@ r_package_versions.txt              # R package versions
 This repository is intended to share **code + notebooks + contracts**.
 Large data files and generated outputs are excluded, but may be acquired through the associated publication.
 
-When available, use the publication-linked release of `adatas/brain_allcells_allgenes.h5ad` (Notebook 02 output) as the primary processed input for this pipeline.
+When available, use the publication-linked release of `adatas/brain_allcells_allgenes.h5ad` and `adatas/mouse_microglia_humanized_nb02.h5ad` (Notebook 02 outputs) as the primary processed handoff inputs for this pipeline.
 
 Please cite and use third-party datasets/resources in accordance with their original licenses and terms.
 
