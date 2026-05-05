@@ -33,7 +33,7 @@ This repository is intentionally prepared as a **professional code/notebook rele
 
 ## Pipeline Diagram
 
-The table above is the concise contract view. The diagram below shows the end-to-end analysis flow and where the RPPA branch rejoins the downstream interpretation path.
+The table above is the concise contract view. The diagram below shows the end-to-end analysis flow, with the RPPA branch merging into notebook 14 and the DGE/pathway branch remaining separate from the multiomic and TF-GWAS branch.
 
 ```mermaid
 flowchart TD
@@ -47,12 +47,12 @@ flowchart TD
 	N07 --> N08[08 Celltype counts and significance]
 	N08 --> N09[09 DGE run once]
 	N09 --> N10[10 DGE visualization]
-	N10 --> N11[11 DGE pathway analysis]
-	N11 --> N12[12 GSEA visualization and custom lists]
-	N02 --> N13[13 RPPA analysis]
+	N09 --> N11[11 DGE pathway analysis]
+	N09 --> N12[12 Unified GSEA visualization and custom lists]
+	N13[13 RPPA analysis]
+	N02 --> N14[14 Multiomic pseudobulk RPPA]
 	N13 --> N14[14 Multiomic pseudobulk RPPA]
 	N14 --> N15[15 TF GWAS analysis]
-	N12 --> N15
 ```
 
 ## Recommended Execution Order
