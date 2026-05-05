@@ -1,0 +1,478 @@
+---
+title: "05 Homeostatic Subtyping From Major Population 1"
+output:
+  html_notebook:
+    toc: true
+    toc_float: true
+    number_sections: true
+---
+
+## Overview
+
+Production handoff notebook for the second typing event:
+
+1. load nb04 major-typed mouse mapping output,
+2. subset mouse cells assigned to major population `1`,
+3. map those cells to the human homeostatic reference,
+4. export a final combined human+mouse AnnData containing both typing levels.
+
+## Inputs
+
+- `Analysis/adatas/mouse_microglia_major_mapped_nb04.h5ad`
+- `Analysis/Human/human_homeostat_ref.rds` (fallback: `human_MG_reference.rds`)
+
+## Outputs
+
+- `Results/UMAP/homeostatic_subtyping_aligned_nb05.svg`
+  aligned UMAP for homeostatic subtyping
+- `Results/Tables/mouse_homeostatic_subtype_counts_nb05.csv`
+  mouse subtype counts within major population 1
+- `adatas/human_mouse_homeostatic_typed_nb05.h5ad`
+  final handoff with `major_pop_label` and `homeostatic_subtype_label`
+
+## Handoff Contract
+
+- Consumes the major-population mapped mouse object from notebook `04`
+- Consumes the human homeostatic reference under `Human/`
+- Produces the final cross-species homeostatic typing handoff used directly by notebook `06`
+- Writes durable outputs only under `Results/` and `adatas/` within the analysis root
+
+## Pipeline Flow
+
+1. Notebook 04\nMajor-population mapped mouse microglia
+2. Load nb04 output
+3. Human homeostatic reference\nHuman/human_homeostat_ref.rds\nor human_MG_reference.rds] --> D[
+4. Load reference
+5. Subset mouse cells\nmajor_pop_label == 1
+6. Prepare homeostatic reference
+7. Transfer anchors and MapQuery
+8. Assign homeostatic subtype labels
+9. Export aligned UMAP and subtype counts
+10. Export final combined human+mouse h5ad/rds
+11. Notebook 06\nCross-species homeostatic analysis
+
+```{r setup, include=FALSE}
+# Fail fast so pipeline status reflects real execution outcomes.
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE, error = FALSE)
+
+required_packages <- c(
+  "Seurat", "SeuratObject", "ggplot2", "patchwork", "schard", "Matrix",
+  "SingleCellExperiment", "zellkonverter"
+)
+missing_pkgs <- required_packages[
+  !vapply(required_packages, requireNamespace, logical(1), quietly = TRUE)
+]
+if (length(missing_pkgs) > 0) {
+  stop("Missing packages: ", paste(missing_pkgs, collapse = ", "))
+}
+
+library(Seurat)
+library(SeuratObject)
+library(ggplot2)
+library(patchwork)
+library(schard)
+library(SingleCellExperiment)
+library(zellkonverter)
+
+analysis_root <- tryCatch(
+  {
+    f <- knitr::current_input(dir = TRUE)
+    if (!is.null(f) && nzchar(f)) dirname(dirname(f)) else stop("not rendering")
+  },
+  error = function(e) {
+    wd <- getwd()
+    if (basename(wd) == "Notebooks") dirname(wd) else wd
+  }
+)
+stopifnot(dir.exists(analysis_root))
+
+results_umap_dir <- file.path(analysis_root, "Results", "UMAP")
+results_tables_dir <- file.path(analysis_root, "Results", "Tables")
+adatas_dir <- file.path(analysis_root, "adatas")
+dir.create(results_umap_dir, recursive = TRUE, showWarnings = FALSE)
+dir.create(results_tables_dir, recursive = TRUE, showWarnings = FALSE)
+dir.create(adatas_dir, recursive = TRUE, showWarnings = FALSE)
+
+notebook_tag <- "nb05"
+input_mouse_major_path <- file.path(
+  adatas_dir,
+  "mouse_microglia_major_mapped_nb04.h5ad"
+)
+input_mouse_major_rds_path <- file.path(
+  adatas_dir,
+  "mouse_microglia_major_mapped_nb04.rds"
+)
+output_umap_path <- file.path(
+  results_umap_dir,
+  paste0("homeostatic_subtyping_aligned_", notebook_tag, ".svg")
+)
+output_counts_path <- file.path(
+  results_tables_dir,
+  paste0("mouse_homeostatic_subtype_counts_", notebook_tag, ".csv")
+)
+output_h5ad_path <- file.path(
+  adatas_dir,
+  paste0("human_mouse_homeostatic_typed_", notebook_tag, ".h5ad")
+)
+output_rds_path <- file.path(
+  adatas_dir,
+  paste0("human_mouse_homeostatic_typed_", notebook_tag, ".rds")
+)
+```
+
+## Load Inputs
+
+```{r load-data}
+if (file.exists(input_mouse_major_rds_path)) {
+  mouse_major <- readRDS(input_mouse_major_rds_path)
+  message("Loaded mouse_major from RDS: ", input_mouse_major_rds_path)
+} else if (file.exists(input_mouse_major_path)) {
+  mouse_major <- schard::h5ad2seurat(input_mouse_major_path)
+  message("Loaded mouse_major from h5ad: ", input_mouse_major_path)
+} else {
+  stop(
+    "Missing required nb04 output. Checked:\n",
+    "  RDS: ", input_mouse_major_rds_path, "\n",
+    "  h5ad: ", input_mouse_major_path
+  )
+}
+
+homeostat_ref_candidates <- c(
+  file.path(analysis_root, "Human", "human_homeostat_ref.rds"),
+  file.path(analysis_root, "Human", "human_MG_reference.rds")
+)
+existing_homeostat_refs <- homeostat_ref_candidates[file.exists(homeostat_ref_candidates)]
+if (length(existing_homeostat_refs) == 0) {
+  stop(
+    "Missing homeostatic reference. Checked: ",
+    paste(homeostat_ref_candidates, collapse = "; ")
+  )
+}
+
+homeostat_ref <- NULL
+homeostat_ref_path <- NA_character_
+read_errors <- character(0)
+for (candidate in existing_homeostat_refs) {
+  ref_try <- tryCatch(readRDS(candidate), error = function(e) e)
+  if (!inherits(ref_try, "error")) {
+    homeostat_ref <- ref_try
+    homeostat_ref_path <- candidate
+    break
+  }
+  read_errors <- c(read_errors, paste0(candidate, " -> ", conditionMessage(ref_try)))
+}
+
+if (is.null(homeostat_ref)) {
+  stop(
+    "Could not read any homeostatic reference RDS. Errors: ",
+    paste(read_errors, collapse = " | ")
+  )
+}
+
+message("Loaded homeostatic reference: ", homeostat_ref_path)
+
+cluster_col <- if ("subcluster_id" %in% colnames(homeostat_ref@meta.data)) {
+  "subcluster_id"
+} else if ("cluster_id" %in% colnames(homeostat_ref@meta.data)) {
+  "cluster_id"
+} else {
+  stop(
+    "Neither 'subcluster_id' nor 'cluster_id' found in homeostatic reference"
+  )
+}
+homeostat_ref$homeostatic_subtype_label <- as.character(
+  homeostat_ref[[cluster_col, drop = TRUE]]
+)
+
+if (!("major_pop_label" %in% colnames(mouse_major@meta.data))) {
+  if ("predicted.cluster_id" %in% colnames(mouse_major@meta.data)) {
+    mouse_major$major_pop_label <- as.character(
+      mouse_major$predicted.cluster_id
+    )
+  } else {
+    stop("mouse_major is missing major population labels from nb04")
+  }
+}
+
+message("Loaded mouse cells from nb04: ", ncol(mouse_major))
+```
+
+## Subset Major Population 1 and Remap
+
+```{r remap-homeostatic-subtypes}
+mouse_major1 <- subset(mouse_major, subset = major_pop_label == "1")
+if (ncol(mouse_major1) == 0) {
+  stop("No mouse cells with major_pop_label == '1' were found")
+}
+
+if (!("integrated" %in% names(homeostat_ref@assays))) {
+  stop("Assay 'integrated' not found in homeostatic reference")
+}
+
+homeo_genes <- tryCatch(
+  rownames(
+    SeuratObject::LayerData(
+      homeostat_ref[["integrated"]],
+      layer = "scale.data"
+    )
+  ),
+  error = function(e) {
+    rownames(
+      GetAssayData(homeostat_ref, assay = "integrated", slot = "scale.data")
+    )
+  }
+)
+shared_genes <- intersect(homeo_genes, rownames(mouse_major1))
+if (length(shared_genes) < 100) {
+  stop("Too few shared genes for subtype mapping: ", length(shared_genes))
+}
+
+homeo_ref_sub <- homeostat_ref[shared_genes, ]
+mouse_major1_sub <- mouse_major1[shared_genes, ]
+
+DefaultAssay(homeo_ref_sub) <- "integrated"
+DefaultAssay(mouse_major1_sub) <- "RNA"
+
+if (!("pca" %in% names(homeo_ref_sub@reductions))) {
+  homeo_ref_sub <- RunPCA(homeo_ref_sub, npcs = 30, verbose = FALSE)
+}
+
+has_umap_model <- function(seurat_obj, reduction_name = "umap") {
+  reduction_name %in% names(seurat_obj@reductions) &&
+    "model" %in% names(seurat_obj@reductions[[reduction_name]]@misc)
+}
+
+if (!has_umap_model(homeo_ref_sub, "umap")) {
+  homeo_ref_sub <- RunUMAP(
+    homeo_ref_sub,
+    reduction = "pca",
+    dims = 1:30,
+    return.model = TRUE
+  )
+}
+
+anchors <- FindTransferAnchors(
+  reference = homeo_ref_sub,
+  query = mouse_major1_sub,
+  reference.assay = "integrated",
+  query.assay = "RNA",
+  reduction = "pcaproject",
+  reference.reduction = "pca",
+  dims = 1:30
+)
+
+mouse_major1_mapped <- MapQuery(
+  anchorset = anchors,
+  query = mouse_major1_sub,
+  reference = homeo_ref_sub,
+  refdata = list(homeostatic_subtype_label = "homeostatic_subtype_label"),
+  reference.reduction = "pca",
+  reduction.model = "umap"
+)
+
+mouse_major1_mapped$homeostatic_subtype_label <- as.character(
+  mouse_major1_mapped$predicted.homeostatic_subtype_label
+)
+```
+
+## QC UMAP and Counts
+
+```{r qc-outputs}
+umap_coords <- Embeddings(homeo_ref_sub, reduction = "umap")
+x_limits <- range(umap_coords[, 1])
+y_limits <- range(umap_coords[, 2])
+
+all_subtypes <- sort(unique(c(
+  as.character(homeo_ref_sub$homeostatic_subtype_label),
+  as.character(mouse_major1_mapped$homeostatic_subtype_label)
+)))
+all_subtypes <- all_subtypes[!is.na(all_subtypes)]
+subtype_colors <- setNames(
+  grDevices::hcl.colors(length(all_subtypes), palette = "Dark 3"),
+  all_subtypes
+)
+
+p_human <- DimPlot(
+  homeo_ref_sub,
+  reduction = "umap",
+  group.by = "homeostatic_subtype_label",
+  cols = subtype_colors,
+  label = TRUE
+) +
+  ggtitle("Human Homeostatic Subtypes") +
+  coord_fixed() + xlim(x_limits) + ylim(y_limits)
+
+p_mouse <- DimPlot(
+  mouse_major1_mapped,
+  reduction = "ref.umap",
+  group.by = "homeostatic_subtype_label",
+  cols = subtype_colors,
+  label = TRUE
+) +
+  ggtitle("Mouse Major Pop 1 Mapped to Homeostatic Subtypes") +
+  coord_fixed() + xlim(x_limits) + ylim(y_limits)
+
+aligned_plot <- p_human + p_mouse
+print(aligned_plot)
+
+svg(output_umap_path, width = 12, height = 6)
+print(aligned_plot)
+dev.off()
+message("Saved: ", output_umap_path)
+
+subtype_counts <- as.data.frame(
+  table(mouse_major1_mapped$homeostatic_subtype_label),
+  stringsAsFactors = FALSE
+)
+colnames(subtype_counts) <- c("homeostatic_subtype_label", "n_cells")
+subtype_counts <- subtype_counts[order(-subtype_counts$n_cells), ]
+write.csv(subtype_counts, file = output_counts_path, row.names = FALSE)
+message("Saved: ", output_counts_path)
+```
+
+## Export Final Combined Handoff
+
+```{r export-final-handoff}
+
+# --- Harmonize subtypes: only keep human cells with subtypes present in mouse ---
+mouse_subtypes <- unique(na.omit(mouse_major1_mapped$homeostatic_subtype_label))
+homeo_ref_sub <- subset(
+  homeo_ref_sub,
+  cells = colnames(homeo_ref_sub)[homeo_ref_sub$homeostatic_subtype_label %in% mouse_subtypes]
+)
+# Relabel to ensure matching
+homeo_ref_sub$homeostatic_subtype_label <- factor(
+  as.character(homeo_ref_sub$homeostatic_subtype_label),
+  levels = mouse_subtypes
+)
+mouse_major1_mapped$homeostatic_subtype_label <- factor(
+  as.character(mouse_major1_mapped$homeostatic_subtype_label),
+  levels = mouse_subtypes
+)
+
+# Keep both label levels for Python analysis.
+homeo_ref_sub$species <- "Human"
+homeo_ref_sub$major_pop_label <- NA_character_
+mouse_major1_mapped$species <- "Mouse"
+if (!("major_pop_label" %in% colnames(mouse_major1_mapped@meta.data))) {
+  mouse_major1_mapped$major_pop_label <- "1"
+}
+
+if (!("RNA" %in% names(homeo_ref_sub@assays))) {
+  stop("Homeostatic reference missing RNA assay")
+}
+DefaultAssay(homeo_ref_sub) <- "RNA"
+DefaultAssay(mouse_major1_mapped) <- "RNA"
+
+# Preserve counts from RNA assay slots before merge for downstream analysis (e.g. SCANVI)
+h_counts <- NULL
+m_counts <- NULL
+tryCatch(
+  {
+    h_counts <- GetAssayData(homeo_ref_sub, assay = "RNA", slot = "counts")
+    message("  Extracting human RNA counts for export: ",
+            nrow(h_counts), " x ", ncol(h_counts))
+  },
+  error = function(e) {
+    message("  Human counts unavailable: ", conditionMessage(e))
+  }
+)
+tryCatch(
+  {
+    m_counts <- GetAssayData(mouse_major1_mapped, assay = "RNA", slot = "counts")
+    message("  Extracting mouse RNA counts for export: ",
+            nrow(m_counts), " x ", ncol(m_counts))
+  },
+  error = function(e) {
+    message("  Mouse counts unavailable: ", conditionMessage(e))
+  }
+)
+
+human_umap <- Embeddings(homeo_ref_sub, reduction = "umap")
+mouse_umap <- Embeddings(mouse_major1_mapped, reduction = "ref.umap")
+rownames(human_umap) <- paste0("Human_", rownames(human_umap))
+rownames(mouse_umap) <- paste0("Mouse_", rownames(mouse_umap))
+combined_umap <- rbind(human_umap, mouse_umap)
+
+combined_final <- merge(
+  x = homeo_ref_sub,
+  y = mouse_major1_mapped,
+  add.cell.ids = c("Human", "Mouse"),
+  project = "human_mouse_homeostatic_typed"
+)
+
+combined_final[["mapped_umap"]] <- CreateDimReducObject(
+  embeddings = combined_umap[colnames(combined_final), , drop = FALSE],
+  key = "UMAP_",
+  assay = DefaultAssay(combined_final)
+)
+
+# Merge counts from both sources if available
+if (!is.null(h_counts) && !is.null(m_counts)) {
+  tryCatch(
+    {
+      shared_genes_counts <- intersect(rownames(h_counts), rownames(m_counts))
+      if (length(shared_genes_counts) > 100) {
+        h_c_subset <- h_counts[shared_genes_counts, ]
+        m_c_subset <- m_counts[shared_genes_counts, ]
+        combined_counts <- cbind(h_c_subset, m_c_subset)
+        colnames(combined_counts) <- colnames(combined_final)
+        combined_final[["counts"]] <- CreateAssayObject(counts = combined_counts)
+        message("  Created combined counts assay: ", 
+                length(shared_genes_counts), " shared genes")
+      }
+    },
+    error = function(e) {
+      message("  Note: Could not merge counts - ", conditionMessage(e))
+    }
+  )
+}
+
+tryCatch(
+  {
+    DefaultAssay(combined_final) <- "RNA"
+    sce <- as.SingleCellExperiment(combined_final, assay = "RNA")
+    
+    # If combined_final has a counts assay, add it explicitly to SCE
+    if ("counts" %in% names(combined_final@assays)) {
+      counts_data <- GetAssayData(combined_final, assay = "counts", slot = "counts")
+      SummarizedExperiment::assay(sce, "counts", withDimnames = FALSE) <-
+        counts_data[, colnames(sce)]
+      message("  Included counts layer in SCE export")
+    }
+    
+    col_data <- as.data.frame(SummarizedExperiment::colData(sce))
+    col_data[] <- lapply(
+      col_data,
+      function(col) {
+        if (is.factor(col)) as.character(col) else col
+      }
+    )
+    SummarizedExperiment::colData(sce) <- S4Vectors::DataFrame(col_data)
+    row_data <- as.data.frame(SummarizedExperiment::rowData(sce))
+    row_data$gene_symbol <- rownames(sce)
+    SummarizedExperiment::rowData(sce) <- S4Vectors::DataFrame(row_data)
+    SingleCellExperiment::reducedDim(
+      sce, "X_umap"
+    ) <- combined_umap[colnames(combined_final), , drop = FALSE]
+    x_assay <- if ("logcounts" %in% SummarizedExperiment::assayNames(sce)) {
+      "logcounts"
+    } else if ("counts" %in% SummarizedExperiment::assayNames(sce)) {
+      "counts"
+    } else {
+      SummarizedExperiment::assayNames(sce)[1]
+    }
+    zellkonverter::writeH5AD(
+      sce,
+      file = output_h5ad_path,
+      X_name = x_assay
+    )
+    message("Saved h5ad with counts layer: ", output_h5ad_path)
+  },
+  error = function(e) {
+    message("h5ad export failed: ", conditionMessage(e))
+    saveRDS(combined_final, output_rds_path)
+    message("Saved RDS fallback: ", output_rds_path)
+  }
+)
+```

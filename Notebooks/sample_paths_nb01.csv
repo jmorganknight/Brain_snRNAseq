@@ -1,0 +1,7 @@
+Sample,Path,Condition
+Mock-1,/media/drive_c/Project_Brain_snRNAseq/Analysis/scAR/h5ad/Mock-1_scar_corrected.h5ad,Mock
+Mock-2,/media/drive_c/Project_Brain_snRNAseq/Analysis/scAR/h5ad/Mock-2_scar_corrected.h5ad,Mock
+Mock-3,/media/drive_c/Project_Brain_snRNAseq/Analysis/scAR/h5ad/Mock-3_scar_corrected.h5ad,Mock
+OG-1,/media/drive_c/Project_Brain_snRNAseq/Analysis/scAR/h5ad/OG-1_scar_corrected.h5ad,OG
+OG-2,/media/drive_c/Project_Brain_snRNAseq/Analysis/scAR/h5ad/OG-2_scar_corrected.h5ad,OG
+OG-3,/media/drive_c/Project_Brain_snRNAseq/Analysis/scAR/h5ad/OG-3_scar_corrected.h5ad,OG

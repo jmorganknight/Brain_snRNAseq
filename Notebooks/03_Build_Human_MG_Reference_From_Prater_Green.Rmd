@@ -1,0 +1,308 @@
+---
+title: "03 Build Human MG Reference From Prater Green"
+author: "jmk"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    number_sections: true
+---
+
+## Overview
+
+This notebook builds the human microglia reference object used in downstream
+cross-species mapping analyses. It starts from the Prater/Green PU1 microglia
+source dataset, standardizes the Seurat object, preserves cluster labels, and
+exports the final reference as `human_MG_reference.rds`.
+
+## Citation
+
+> Prater KE, Green KJ, Mamde S, Sun W, Cochoit A, Smith CL, Chiou KL, Heath L,
+> Rose SE, Wiley J, Keene CD, Kwon RY, Snyder-Mackler N, Blue EE, Logsdon B,
+> Young JE, Shojaie A, Garden GA, Jayadev S. Human microglia show unique
+> transcriptional changes in Alzheimer's disease. Nat Aging. 2023
+> Jul;3(7):894-907. doi: 10.1038/s43587-023-00424-y.
+
+## Inputs
+
+- `Synaps_datasets/Pu1/Prater_Green_PU1_MGsubset_10clusters_DeID.rdata`
+
+## Outputs
+
+- `Analysis/Human/human_MG_reference.rds`
+- `Analysis/Results/UMAP/human_MG_reference_umap_nb03.svg`
+  publication-quality UMAP with legend
+
+## Analysis Scope
+
+1. Locate and load the Prater/Green source object.
+2. Update to current Seurat object structure.
+3. Ensure PCA and UMAP are present (compute if missing).
+4. Preserve cluster identities in metadata as `cluster_id`.
+5. Save the reference object for notebooks `04` and `05`.
+
+## Handoff Contract
+
+- Consumes the external Prater/Green human microglia source object
+- Produces the canonical human microglia reference used by notebooks `04` and `05`
+- Writes durable outputs only under `Human/` and `Results/UMAP/` within the analysis root
+
+## Pipeline Flow
+
+1. Prater Green source object\nrdata or legacy rds
+2. Load and standardize Seurat object
+3. Validate or compute PCA and UMAP
+4. Preserve cluster labels as cluster_id
+5. Export canonical human_MG_reference.rds
+6. Export publication UMAP
+7. Notebook 04 major-population mapping
+8. Notebook 05 homeostatic subtyping
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+
+required_packages <- c("Seurat", "SeuratObject", "ggplot2", "viridis")
+missing_pkgs <- required_packages[
+  !sapply(required_packages, requireNamespace, quietly = TRUE)
+]
+if (length(missing_pkgs) > 0) {
+  stop("Missing packages: ", paste(missing_pkgs, collapse = ", "))
+}
+
+library(Seurat)
+library(SeuratObject)
+library(ggplot2)
+library(viridis)
+
+random_seed <- 42
+set.seed(random_seed)
+
+analysis_root <- tryCatch(
+  {
+    f <- knitr::current_input(dir = TRUE)
+    if (!is.null(f) && nzchar(f)) dirname(dirname(f)) else stop("not rendering")
+  },
+  error = function(e) {
+    root <- Sys.getenv("ANALYSIS_ROOT", unset = "")
+    if (nzchar(root)) root else {
+      wd <- getwd()
+      if (basename(wd) == "Notebooks") dirname(wd) else wd
+    }
+  }
+)
+stopifnot(dir.exists(analysis_root))
+
+human_dir <- file.path(analysis_root, "Human")
+results_dir <- file.path(analysis_root, "Results")
+umap_dir <- file.path(results_dir, "UMAP")
+dir.create(human_dir, recursive = TRUE, showWarnings = FALSE)
+dir.create(results_dir, recursive = TRUE, showWarnings = FALSE)
+dir.create(umap_dir, recursive = TRUE, showWarnings = FALSE)
+
+notebook_tag <- "nb03"
+
+output_rds    <- file.path(human_dir, "human_MG_reference.rds")
+output_umap_svg <- file.path(
+  umap_dir,
+  paste0("human_MG_reference_umap_", notebook_tag, ".svg")
+)
+```
+
+# Resolve Source File
+
+```{r resolve-source}
+source_candidates <- c(
+  file.path(
+    dirname(analysis_root),
+    "Synaps_datasets",
+    "Pu1",
+    "Prater_Green_PU1_MGsubset_10clusters_DeID.rdata"
+  ),
+  file.path(
+    analysis_root,
+    "Synaps_datasets",
+    "Pu1",
+    "Prater_Green_PU1_MGsubset_10clusters_DeID.rdata"
+  ),
+  file.path(analysis_root, "Old_Analysis", "Human", "human_MG_seurat.rds"),
+  file.path(
+    dirname(analysis_root),
+    "Old_Analysis",
+    "Human",
+    "human_MG_seurat.rds"
+  )
+)
+
+source_path <- source_candidates[file.exists(source_candidates)][1]
+if (is.na(source_path)) {
+  stop(
+    "No source file found. Checked: ",
+    paste(source_candidates, collapse = "; ")
+  )
+}
+
+message("Using source: ", source_path)
+```
+
+# Load and Standardize Seurat Object
+
+```{r load-object}
+if (grepl("\\.rdata$", source_path, ignore.case = TRUE)) {
+  env <- new.env(parent = emptyenv())
+  load(source_path, envir = env)
+
+  object_candidates <- Filter(
+    function(nm) inherits(get(nm, envir = env), "Seurat"),
+    ls(env)
+  )
+
+  preferred <- c("ss_data_norm", "human_MG_seurat", "seurat_obj")
+  pick <- preferred[preferred %in% object_candidates][1]
+  if (is.na(pick)) pick <- object_candidates[1]
+
+  if (is.na(pick)) {
+    stop("No Seurat object found in source .rdata")
+  }
+
+  human_mg_ref <- get(pick, envir = env)
+  message("Loaded Seurat object from .rdata variable: ", pick)
+} else {
+  human_mg_ref <- readRDS(source_path)
+  if (!inherits(human_mg_ref, "Seurat")) {
+    stop("Source RDS does not contain a Seurat object")
+  }
+  message("Loaded Seurat object from .rds")
+}
+
+human_mg_ref <- UpdateSeuratObject(human_mg_ref)
+message("Cells: ", ncol(human_mg_ref), " | Genes: ", nrow(human_mg_ref))
+```
+
+# Ensure Dimensional Reductions
+
+```{r ensure-reductions}
+if (!("pca" %in% names(human_mg_ref@reductions))) {
+  message("PCA not found; computing PCA")
+  human_mg_ref <- RunPCA(human_mg_ref, npcs = 50, verbose = FALSE)
+}
+
+if (!("umap" %in% names(human_mg_ref@reductions))) {
+  message("UMAP not found; computing UMAP from PCA")
+  human_mg_ref <- RunUMAP(
+    human_mg_ref,
+    reduction = "pca",
+    dims = 1:30,
+    seed.use = random_seed
+  )
+}
+
+print(DimPlot(human_mg_ref, reduction = "umap", label = TRUE) +
+        ggtitle("Human MG Reference UMAP"))
+```
+
+# Preserve Cluster Labels
+
+```{r preserve-cluster-id}
+human_mg_ref$cluster_id <- as.character(Idents(human_mg_ref))
+if (!"cluster_id" %in% colnames(human_mg_ref@meta.data)) {
+  stop("Failed to create metadata column 'cluster_id'")
+}
+
+message(
+  "cluster_id levels: ",
+  paste(sort(unique(human_mg_ref$cluster_id)), collapse = ", ")
+)
+```
+
+# Generate Publication-Quality UMAP Figure
+
+```{r plot-umap-publication}
+# Extract UMAP coordinates and metadata
+umap_embedding <- Embeddings(human_mg_ref, reduction = "umap")
+umap_df <- data.frame(
+  UMAP_1 = umap_embedding[, 1],
+  UMAP_2 = umap_embedding[, 2],
+  cluster_id = as.factor(human_mg_ref$cluster_id)
+)
+
+# Create ggplot2-based UMAP with publication-quality formatting
+p_umap <- ggplot(umap_df, aes(x = UMAP_1, y = UMAP_2, color = cluster_id)) +
+  geom_point(size = 0.8, alpha = 0.55) +
+  scale_color_viridis_d(
+    option = "D",
+    begin = 0.18,
+    end = 0.82,
+    guide = guide_legend(
+      nrow = 2,
+      byrow = TRUE,
+      title = "Cluster ID",
+      override.aes = list(size = 3, alpha = 1)
+    )
+  ) +
+  labs(
+    title = "Human Microglia Reference UMAP",
+    x = "UMAP 1",
+    y = "UMAP 2"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(size = 14, face = "bold", hjust = 0.5),
+    axis.title = element_text(size = 12),
+    axis.text = element_text(size = 10),
+    legend.title = element_text(size = 11),
+    legend.text = element_text(size = 10),
+    legend.position = "bottom",
+    legend.box = "horizontal",
+    plot.margin = margin(10, 10, 10, 10, "pt")
+  )
+
+print(p_umap)
+
+# Save as SVG for publication
+ggsave(
+  filename = output_umap_svg,
+  plot = p_umap,
+  width = 10,
+  height = 8,
+  units = "in",
+  device = "svg"
+)
+
+message("Saved publication-quality UMAP: ", output_umap_svg)
+```
+
+# Save Reference Outputs
+
+```{r save-outputs}
+# Final safety guard for interactive execution order.
+# If earlier chunks were skipped, ensure reductions exist before export.
+if (!("pca" %in% names(human_mg_ref@reductions))) {
+  message("PCA missing at save step; computing PCA now")
+  human_mg_ref <- RunPCA(human_mg_ref, npcs = 50, verbose = FALSE)
+}
+if (!("umap" %in% names(human_mg_ref@reductions))) {
+  message("UMAP missing at save step; computing UMAP now")
+  human_mg_ref <- RunUMAP(
+    human_mg_ref,
+    reduction = "pca",
+    dims = 1:30,
+    seed.use = random_seed
+  )
+}
+
+saveRDS(human_mg_ref, file = output_rds)
+message("Saved: ", output_rds)
+```
+
+## Summary
+
+This notebook builds `human_MG_reference.rds` directly from the Prater/Green
+human microglia source object and validates that the output contains:
+
+- a Seurat object updated to current format,
+- PCA and UMAP reductions,
+- `cluster_id` metadata required by notebook `04`.
+
+Next step: run notebook `04_Human_Mouse_Microglia_Overlap.Rmd` to map mouse
+microglia onto this reference.

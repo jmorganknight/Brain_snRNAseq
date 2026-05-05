@@ -1,0 +1,35 @@
+# Python envs and caches
+.venv/
+__pycache__/
+.pytest_cache/
+*.pyc
+
+# VS Code
+.vscode/
+
+# Notebook checkpoints
+.ipynb_checkpoints/
+
+# Data and generated outputs (code-only repo)
+adatas/
+Results/
+Mapping/
+scAR/
+RPPA/final_simple/
+Microglia_analysis/
+Astrocyte_analysis/
+Correlation_Analysis/
+QC_plots/
+figure/
+concat/
+concat_backups/
+Human/figures/
+plots/
+table/
+pipeline_run_logs/
+scAR_seed_sweep/
+
+# Local/system artifacts
+.DS_Store
+Thumbs.db
+*.log

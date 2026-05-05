@@ -1,0 +1,314 @@
+---
+title: "04 Human-Mouse Major Population Mapping"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    number_sections: true
+---
+
+## Overview
+
+Stage 1 typing notebook. This maps mouse microglia onto the full human microglia
+reference, assigns major population labels, generates UMAP overlays, and exports
+handoff artifacts for stage 2 (`05`).
+
+## Inputs
+
+- `Analysis/Human/human_MG_reference.rds`
+- `Analysis/adatas/mouse_microglia_humanized_nb02.h5ad`
+
+## Outputs
+
+- `Analysis/Results/UMAP/human_mouse_aligned_reference_vs_mapped_nb04.svg`
+- `Analysis/Results/UMAP/human_mouse_combined_umap_nb04.svg`
+- `Analysis/Results/Tables/mouse_major_population_counts_nb04.csv`
+- `Analysis/adatas/mouse_microglia_major_mapped_nb04.h5ad`
+
+## Handoff Contract
+
+- Consumes the canonical mouse microglia query produced by notebook `02`
+- Consumes the human microglia reference produced by notebook `03`
+- Produces the major-population typed mouse handoff used directly by notebook `05`
+- Writes all durable outputs under `Results/` and `adatas/` inside the analysis root
+
+## Pipeline Flow
+
+1. Notebook 03\nHuman MG reference
+2. Notebook 04\nLoad reference and mouse query
+3. Notebook 02\nHumanized mouse microglia h5ad
+4. Find transfer anchors\nand map mouse onto human reference
+5. Assign major population labels
+6. Export mapped mouse object\nnb04 h5ad and rds
+7. Export count table and UMAP figures
+8. Notebook 05 stage-2\nhomeostatic subtyping
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+
+required_packages <- c(
+  "Seurat", "SeuratObject", "ggplot2", "patchwork", "schard", "scales"
+)
+missing_pkgs <- required_packages[
+  !vapply(required_packages, requireNamespace, logical(1), quietly = TRUE)
+]
+if (length(missing_pkgs) > 0) {
+  stop("Missing packages: ", paste(missing_pkgs, collapse = ", "))
+}
+
+library(Seurat)
+library(SeuratObject)
+library(ggplot2)
+library(patchwork)
+library(schard)
+library(scales)
+
+analysis_root <- tryCatch(
+  {
+    f <- knitr::current_input(dir = TRUE)
+    if (!is.null(f) && nzchar(f)) dirname(dirname(f)) else stop("not rendering")
+  },
+  error = function(e) {
+    wd <- getwd()
+    if (basename(wd) == "Notebooks") dirname(wd) else wd
+  }
+)
+stopifnot(dir.exists(analysis_root))
+
+results_umap_dir <- file.path(analysis_root, "Results", "UMAP")
+results_tables_dir <- file.path(analysis_root, "Results", "Tables")
+adatas_dir <- file.path(analysis_root, "adatas")
+dir.create(results_umap_dir, recursive = TRUE, showWarnings = FALSE)
+dir.create(results_tables_dir, recursive = TRUE, showWarnings = FALSE)
+dir.create(adatas_dir, recursive = TRUE, showWarnings = FALSE)
+
+notebook_tag <- "nb04"
+aligned_plot_path <- file.path(
+  results_umap_dir,
+  paste0("human_mouse_aligned_reference_vs_mapped_", notebook_tag, ".svg")
+)
+combined_plot_path <- file.path(
+  results_umap_dir,
+  paste0("human_mouse_combined_umap_", notebook_tag, ".svg")
+)
+major_counts_path <- file.path(
+  results_tables_dir,
+  paste0("mouse_major_population_counts_", notebook_tag, ".csv")
+)
+major_mapped_h5ad_path <- file.path(
+  adatas_dir,
+  paste0("mouse_microglia_major_mapped_", notebook_tag, ".h5ad")
+)
+major_mapped_rds_path <- file.path(
+  adatas_dir,
+  paste0("mouse_microglia_major_mapped_", notebook_tag, ".rds")
+)
+```
+
+## Load Data
+
+```{r load-data}
+human_ref_path <- file.path(
+  analysis_root,
+  "Human",
+  "human_MG_reference.rds"
+)
+mouse_query_path <- file.path(
+  analysis_root,
+  "adatas",
+  "mouse_microglia_humanized_nb02.h5ad"
+)
+
+if (!file.exists(human_ref_path)) {
+  stop("Missing human reference: ", human_ref_path)
+}
+if (!file.exists(mouse_query_path)) {
+  stop("Missing mouse query from nb02: ", mouse_query_path)
+}
+
+human_ref <- readRDS(human_ref_path)
+mouse_query <- schard::h5ad2seurat(mouse_query_path)
+
+if (!("cluster_id" %in% colnames(human_ref@meta.data))) {
+  stop("'cluster_id' is required in human reference metadata")
+}
+if (!("integrated" %in% names(human_ref@assays))) {
+  stop("Assay 'integrated' not found in human reference")
+}
+```
+
+## Transfer Anchors and Mapping
+
+```{r map-query}
+human_scale_data <- tryCatch(
+  SeuratObject::LayerData(
+    object = human_ref[["integrated"]],
+    layer = "scale.data"
+  ),
+  error = function(e) {
+    GetAssayData(object = human_ref[["integrated"]], slot = "scale.data")
+  }
+)
+
+shared_genes <- intersect(rownames(human_scale_data), rownames(mouse_query))
+if (length(shared_genes) < 100) {
+  stop("Too few shared genes for mapping: ", length(shared_genes))
+}
+
+human_ref_sub <- subset(human_ref, features = shared_genes)
+mouse_query_sub <- subset(mouse_query, features = shared_genes)
+
+DefaultAssay(human_ref_sub) <- "integrated"
+DefaultAssay(mouse_query_sub) <- "RNA"
+
+if (!("pca" %in% names(human_ref_sub@reductions))) {
+  human_ref_sub <- RunPCA(human_ref_sub, npcs = 30, verbose = FALSE)
+}
+
+has_umap_model <- function(seurat_obj, reduction_name = "umap") {
+  reduction_name %in% names(seurat_obj@reductions) &&
+    "model" %in% names(seurat_obj@reductions[[reduction_name]]@misc)
+}
+
+if (!has_umap_model(human_ref_sub, "umap")) {
+  human_ref_sub <- RunUMAP(
+    human_ref_sub,
+    reduction = "pca",
+    dims = 1:30,
+    return.model = TRUE
+  )
+}
+
+anchors <- FindTransferAnchors(
+  reference = human_ref_sub,
+  query = mouse_query_sub,
+  reference.assay = "integrated",
+  query.assay = "RNA",
+  reduction = "pcaproject",
+  reference.reduction = "pca",
+  dims = 1:30
+)
+
+mouse_query_mapped <- MapQuery(
+  anchorset = anchors,
+  query = mouse_query_sub,
+  reference = human_ref_sub,
+  refdata = list(cluster_id = "cluster_id"),
+  reference.reduction = "pca",
+  reduction.model = "umap"
+)
+
+mouse_query_mapped$major_pop_label <- as.character(
+  mouse_query_mapped$predicted.cluster_id
+)
+```
+
+## Export Major Typing Handoff
+
+```{r export-major-typing}
+major_counts <- as.data.frame(
+  table(mouse_query_mapped$major_pop_label),
+  stringsAsFactors = FALSE
+)
+colnames(major_counts) <- c("major_pop_label", "n_cells")
+major_counts <- major_counts[order(-major_counts$n_cells), ]
+write.csv(major_counts, file = major_counts_path, row.names = FALSE)
+
+saveRDS(mouse_query_mapped, major_mapped_rds_path)
+message("Saved: ", major_mapped_rds_path)
+message("Saved: ", major_counts_path)
+```
+
+## UMAP Outputs
+
+```{r umap-outputs}
+umap_coords <- Embeddings(human_ref_sub, reduction = "umap")
+x_limits <- range(umap_coords[, 1])
+y_limits <- range(umap_coords[, 2])
+
+p_human <- DimPlot(
+  human_ref_sub,
+  reduction = "umap",
+  group.by = "cluster_id",
+  label = TRUE,
+  pt.size = 0.45
+) +
+  ggtitle("Human Major Microglia Reference") +
+  coord_fixed() + xlim(x_limits) + ylim(y_limits)
+
+p_mouse <- DimPlot(
+  mouse_query_mapped,
+  reduction = "ref.umap",
+  group.by = "major_pop_label",
+  label = TRUE,
+  pt.size = 0.45
+) +
+  ggtitle("Mapped Mouse Major Populations") +
+  coord_fixed() + xlim(x_limits) + ylim(y_limits)
+
+aligned_plot <- p_human + p_mouse
+print(aligned_plot)
+ggsave(
+  filename = aligned_plot_path,
+  plot = aligned_plot,
+  width = 12,
+  height = 6,
+  units = "in"
+)
+
+human_umap <- Embeddings(human_ref_sub, "umap")
+mouse_umap <- Embeddings(mouse_query_mapped, "ref.umap")
+combined_df <- data.frame(
+  UMAP_1 = c(human_umap[, 1], mouse_umap[, 1]),
+  UMAP_2 = c(human_umap[, 2], mouse_umap[, 2]),
+  species = c(rep("Human", nrow(human_umap)), rep("Mouse", nrow(mouse_umap))),
+  major_pop_label = c(
+    as.character(human_ref_sub$cluster_id),
+    rep(NA_character_, nrow(mouse_umap))
+  )
+)
+
+p_combined <- ggplot(combined_df, aes(x = UMAP_1, y = UMAP_2)) +
+  geom_point(
+    data = subset(combined_df, species == "Human"),
+    aes(color = major_pop_label),
+    size = 0.4,
+    alpha = 0.6
+  ) +
+  geom_point(
+    data = subset(combined_df, species == "Mouse"),
+    color = "red",
+    size = 2,
+    alpha = 0.8
+  ) +
+  scale_color_hue(h = c(0, 360), c = 60, l = 55, labels = label_wrap(15)) +
+  labs(
+    title = "Major Population Mapping: Human Reference and Projected Mouse",
+    x = "UMAP 1",
+    y = "UMAP 2",
+    color = "Human major population"
+  ) +
+  theme_minimal() +
+  theme(
+    legend.position = "bottom",
+    legend.justification = "left",
+    legend.box.just = "left",
+    axis.line = element_line(color = "black", linewidth = 0.5)
+  ) +
+  coord_equal()
+
+print(p_combined)
+ggsave(
+  filename = combined_plot_path,
+  plot = p_combined,
+  width = 11,
+  height = 8,
+  units = "in"
+)
+```
+
+## Next Step
+
+Run `05_Homeostati_Human_Mouse_Overlap.Rmd` to subtype cells assigned to major
+population `1` into homeostatic subpopulations.
