@@ -267,3 +267,5 @@ When available, use the publication-linked release of `adatas/brain_allcells_all
 
 Please cite and use third-party datasets/resources in accordance with their original licenses and terms.
 
+Portions of documentation and code-polishing were assisted by AI tools and then reviewed by the authors.
+
