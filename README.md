@@ -2,6 +2,8 @@
 
 End-to-end single-nucleus RNA-seq and multiomic analysis for brain datasets, implemented as a reproducible notebook pipeline.
 
+This repository contains analysis code used for a manuscript currently in preparation.
+
 This repository is intentionally prepared as a **professional code/notebook release**:
 - analysis logic and notebook contracts are versioned
 - large local data and generated results are excluded
@@ -15,6 +17,21 @@ This repository is intentionally prepared as a **professional code/notebook rele
 - Counts, DGE, pathway, and GSEA downstream analysis
 - RPPA preprocessing and RNA-RPPA integration
 - TF-GWAS follow-up (Open Targets + Enrichr)
+
+## Recommended Primary Input
+
+For end-to-end reproducibility, we recommend using the all-cells/all-genes processed AnnData file from notebook 02:
+- `adatas/brain_allcells_allgenes.h5ad`
+
+This file is the canonical output of `02_Mouse_PrepForComparison.ipynb` and is the preferred starting object distributed with the associated publication materials.
+
+## Data Availability and Recommended Start Point
+
+For practical reruns, we recommend starting from Notebook 03 onward using the publication release artifacts.
+
+- Human-reference and downstream inputs used from Notebooks 03+ will be made publicly available through GEO.
+- RPPA inputs/outputs used in the integrated branch will be released in the same GEO-associated dataset package.
+- Notebooks 00 and 01 are included primarily for full transparency and provenance of the full end-to-end pipeline.
 
 ## Pipeline Stages
 
@@ -84,6 +101,110 @@ python -V
 python -m pip install -r requirements.mlenv.lock.txt
 ```
 
+### Tooling and Version Sweep (for Reproducibility)
+
+To support reproducible reruns and Docker packaging, this repository now includes explicit environment/version manifests:
+
+- `reproducibility/tool_versions.txt`: core CLI and Python package versions used in this pipeline
+- `reproducibility/mlenv_python_version.txt`: active `mlenv` Python executable/version snapshot
+- `reproducibility/mlenv_pip_version.txt`: pip version in `mlenv`
+- `reproducibility/mlenv_pip_list_freeze.txt`: `pip list --format=freeze` snapshot
+- `reproducibility/mlenv_pip_freeze_all.txt`: full `pip freeze --all` snapshot
+
+The current lockfile for preferred Python dependencies is:
+- `requirements.mlenv.lock.txt`
+
+If you need to refresh the manifests after an environment update, run:
+
+```bash
+bash reproducibility/generate_version_manifests.sh
+```
+
+### Docker Packaging (mlenv-aligned)
+
+Starter Docker build file:
+- `docker/Dockerfile.mlenv`
+
+Container dependency scope:
+- Docker images intentionally install only project dependencies from `requirements.pipeline.txt`.
+- The broader local environment lock (`requirements.mlenv.lock.txt`) is kept for workstation reproducibility but is not used for container builds.
+
+Build:
+
+```bash
+docker build -f docker/Dockerfile.mlenv -t brain-snrnaseq:mlenv .
+```
+
+Run (open Jupyter on port 8888):
+
+```bash
+docker run --rm -it -p 8888:8888 brain-snrnaseq:mlenv
+```
+
+Notes:
+- The Docker image is pinned to Python 3.10 to match `mlenv`.
+- R package snapshots are documented in `R_sessionInfo.txt` and `r_package_versions.txt`.
+- Container installs are intentionally pipeline-scoped via `requirements.pipeline.txt` (not the full workstation environment).
+- The original local training/inference stack was developed against an AMD Radeon RX 6750 XT workflow (ROCm-enabled local environment). Docker images here default to portable CPU-compatible Python wheels for reproducibility across machines.
+
+### Docker Packaging (Python + R Unified Runtime)
+
+For running both `.ipynb` (Python and R kernels) and `.Rmd` notebooks in one containerized environment, use:
+
+- `docker/Dockerfile.r-python`
+- `docker/install_r_packages.R`
+- `docker/preflight.sh`
+- `docker/run_all_rmd.sh`
+- `docker-compose.yml`
+- `.dockerignore`
+
+Recommended first-run sequence:
+
+```bash
+bash docker/preflight.sh
+docker compose up --build
+```
+
+Build/run execution is intended to be performed manually in your local terminal.
+
+Build manually:
+
+```bash
+docker build -f docker/Dockerfile.r-python -t brain-snrnaseq:r-python .
+```
+
+Run manually:
+
+```bash
+docker run --rm -it -p 8888:8888 brain-snrnaseq:r-python
+```
+
+Or with compose:
+
+```bash
+docker compose up --build
+```
+
+Inside this container:
+- JupyterLab supports Python notebooks and R notebooks (`IRkernel` installed).
+- R Markdown notebooks can be rendered with:
+
+```bash
+Rscript -e "rmarkdown::render('Notebooks/03_Build_Human_MG_Reference_From_Prater_Green.Rmd')"
+```
+
+Or render all core Rmd stages from the running container:
+
+```bash
+bash docker/run_all_rmd.sh
+```
+
+This unified runtime is intended for reproducible execution across Notebook 00-15 plus the Rmd stages.
+
+Hardware note:
+- The reference local environment was built for an AMD Radeon RX 6750 XT (ROCm-oriented stack).
+- The Docker configuration intentionally prioritizes portability and reproducibility; if GPU acceleration is required, you should add a dedicated ROCm-enabled container profile for your host.
+
 R package/version snapshots are captured in:
 - `R_sessionInfo.txt`
 - `r_package_versions.txt`
@@ -107,6 +228,15 @@ README_NOTEBOOK_VALIDATION.md       # Notebook structural validation guide
 test_notebook_integrity.py          # Integrity checker
 requirements.mlenv.lock.txt         # Preferred Python lockfile
 requirements.lock.txt               # Alternate Python lockfile
+requirements.pipeline.txt           # Pipeline-only Python dependencies for Docker
+reproducibility/                    # Tool + environment version manifests
+docker/Dockerfile.mlenv             # Starter Docker image for mlenv-aligned runtime
+docker/Dockerfile.r-python          # Unified Python+R runtime image
+docker/install_r_packages.R         # R package + IRkernel bootstrap script
+docker/preflight.sh                 # Pre-run checks before docker compose
+docker/run_all_rmd.sh               # Helper to render core Rmd stages in-container
+docker-compose.yml                  # Compose entrypoint for unified runtime
+.dockerignore                       # Build context exclusions for faster/leaner images
 R_sessionInfo.txt                   # R session details
 r_package_versions.txt              # R package versions
 ```
@@ -115,6 +245,8 @@ r_package_versions.txt              # R package versions
 
 This repository is intended to share **code + notebooks + contracts**.
 Large data files and generated outputs are excluded, but may be acquired through the associated publication.
+
+When available, use the publication-linked release of `adatas/brain_allcells_allgenes.h5ad` (Notebook 02 output) as the primary processed input for this pipeline.
 
 Please cite and use third-party datasets/resources in accordance with their original licenses and terms.
 
