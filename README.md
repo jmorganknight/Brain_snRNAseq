@@ -270,7 +270,6 @@ When available, use the publication-linked release of `adatas/brain_allcells_all
 For repository-based reruns on a new system, ensure required handoff data are present at the expected paths:
 - `adatas/` for starting AnnData handoff files.
 - `RPPA/RPPA_data.csv` for the Notebook 13 RPPA input table.
-- `RPPA/for_multiomic/RPPA_nb14_ready_2way_m0_mockog.csv` as the Notebook 13 -> Notebook 14 RPPA handoff export.
 
 Please cite and use third-party datasets/resources in accordance with their original licenses and terms.
 
