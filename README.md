@@ -29,6 +29,10 @@ These are canonical outputs of `02_Mouse_PrepForComparison.ipynb`.
 - `brain_allcells_allgenes.h5ad` is the preferred primary input for the downstream analysis branch and will be distributed through GEO once the manuscript is published.
 - `mouse_microglia_humanized_nb02.h5ad` is the NB02 handoff object used by the cross-species reference/overlap branch (`03-06`).
 
+Expected local placement for clone-and-run setups:
+- Place starting AnnData handoff files in `adatas/`.
+- Place the preprocessed RPPA input file for Notebook 13 in `RPPA/` as `RPPA/RPPA_data_nb13.csv`.
+
 ## Data Availability and Recommended Start Point
 
 For practical reruns, we recommend starting from Notebook 03 onward using the publication release artifacts, including the NB02-derived h5ad handoff files.
@@ -50,7 +54,7 @@ For practical reruns, we recommend starting from Notebook 03 onward using the pu
 | 06 | `06_Homeostatic_Microglia_Analysis.ipynb` | Homeostatic transfer/trends and MLP-based AD-like scoring | `Microglia_analysis/mouse_ad_like_probabilities_with_barcodes_nb06.csv`, `Microglia_analysis/model/*_nb06.*` |
 | 07 | `07_Analysis_Preflight.ipynb` | Handoff contract checks | Readiness checks for 08-15 |
 | 08-12 | `08-12` (`.ipynb`) | Counts, DGE, pathway, GSEA | Differential and enrichment outputs |
-| 13 | `13_RPPA_analysis.ipynb` | RPPA preprocessing | `RPPA/final_simple/for_multiomic/*` |
+| 13 | `13_RPPA_analysis.ipynb` | RPPA analysis from canonical preprocessed input table | `RPPA/RPPA_data_nb13.csv`, `RPPA/final_simple/for_multiomic/*` |
 | 14 | `14_Multiomic_Pseudobulk_RPPA.ipynb` | RNA-RPPA integration | `Results/multiomic/*` |
 | 15 | `15_TF_GWAS_Analysis.ipynb` | TF-GWAS and AD summary | GWAS/OT AD support outputs |
 
@@ -264,6 +268,10 @@ This repository is intended to share **code + notebooks + contracts**.
 Large data files and generated outputs are excluded, but may be acquired through the associated publication.
 
 When available, use the publication-linked release of `adatas/brain_allcells_allgenes.h5ad` and `adatas/mouse_microglia_humanized_nb02.h5ad` (Notebook 02 outputs) as the primary processed handoff inputs for this pipeline.
+
+For repository-based reruns on a new system, ensure required handoff data are present at the expected paths:
+- `adatas/` for starting AnnData handoff files.
+- `RPPA/RPPA_data_nb13.csv` for the Notebook 13 RPPA input table.
 
 Please cite and use third-party datasets/resources in accordance with their original licenses and terms.
 
