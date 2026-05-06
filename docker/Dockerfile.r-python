@@ -1,0 +1,49 @@
+FROM python:3.10-slim
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1
+
+WORKDIR /workspace/Analysis
+
+# System dependencies for Python scientific stack and R ecosystem.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+       build-essential \
+       curl \
+       git \
+       pandoc \
+       r-base \
+       r-base-dev \
+       libcurl4-openssl-dev \
+       libssl-dev \
+       libxml2-dev \
+       libfontconfig1-dev \
+       libfreetype6-dev \
+       libharfbuzz-dev \
+       libfribidi-dev \
+       libpng-dev \
+       libtiff5-dev \
+       libjpeg-dev \
+       libhdf5-dev \
+       libglpk-dev \
+       libgomp1 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Python dependencies required by this pipeline (lean set).
+COPY requirements.pipeline.txt /tmp/requirements.pipeline.txt
+RUN python -m pip install --upgrade pip \
+    && python -m pip install -r /tmp/requirements.pipeline.txt
+
+# Install R packages and register IRkernel for Jupyter.
+COPY docker/install_r_packages.R /tmp/install_r_packages.R
+RUN Rscript /tmp/install_r_packages.R
+
+# Copy repository contents.
+COPY . /workspace/Analysis
+
+EXPOSE 8888
+
+# JupyterLab can run Python notebooks and R notebooks (IRkernel).
+CMD ["python", "-m", "jupyter", "lab", "--ip=0.0.0.0", "--port=8888", "--no-browser", "--allow-root"]

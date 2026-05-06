@@ -1,0 +1,1 @@
+pip 26.0.1 from /home/jmk/.pyenv/versions/mlenv/lib/python3.10/site-packages/pip (python 3.10)

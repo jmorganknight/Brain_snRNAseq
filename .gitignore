@@ -15,7 +15,7 @@ adatas/
 Results/
 Mapping/
 scAR/
-RPPA/final_simple/
+RPPA/
 Microglia_analysis/
 Astrocyte_analysis/
 Correlation_Analysis/
@@ -23,7 +23,7 @@ QC_plots/
 figure/
 concat/
 concat_backups/
-Human/figures/
+Human/
 plots/
 table/
 pipeline_run_logs/

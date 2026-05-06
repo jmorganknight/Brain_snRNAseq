@@ -1,0 +1,28 @@
+Generated: 2026-05-05T21:01:51Z
+Environment: mlenv
+Python executable: /home/jmk/.pyenv/versions/mlenv/bin/python
+
+[Core CLI tools]
+python	Python 3.10.13
+pip	pip 26.0.1 from /home/jmk/.pyenv/versions/mlenv/lib/python3.10/site-packages/pip (python 3.10)
+git	git version 2.43.0
+docker	Docker version 27.5.1, build 27.5.1-0ubuntu3~24.04.2
+docker compose	Docker Compose version v5.0.2
+R	R version 4.5.2 (2025-10-31) -- "[Not] Part in a Rumble"
+
+[Core Python package versions used in pipeline]
+jupyter	1.1.1
+notebook	6.5.7
+jupyterlab	4.5.5
+ipykernel	6.29.5
+numpy	2.2.6
+pandas	2.3.3
+scipy	1.14.1
+matplotlib	3.10.0
+seaborn	0.13.2
+anndata	0.11.4
+scanpy	1.11.5
+scikit-learn	1.7.2
+statsmodels	0.14.6
+requests	2.32.5
+decoupler	2.1.4

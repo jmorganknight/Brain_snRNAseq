@@ -1,0 +1,3 @@
+Generated: 2026-05-05T21:01:51Z
+Python executable: /home/jmk/.pyenv/versions/mlenv/bin/python
+Python 3.10.13

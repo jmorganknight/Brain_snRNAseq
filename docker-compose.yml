@@ -1,0 +1,13 @@
+services:
+  analysis-r-python:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.r-python
+    image: brain-snrnaseq:r-python
+    container_name: brain-snrnaseq-r-python
+    ports:
+      - "8888:8888"
+    working_dir: /workspace/Analysis
+    volumes:
+      - ./:/workspace/Analysis
+    command: ["python", "-m", "jupyter", "lab", "--ip=0.0.0.0", "--port=8888", "--no-browser", "--allow-root"]
