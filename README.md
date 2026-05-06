@@ -2,18 +2,15 @@
 
 End-to-end single-nucleus RNA-seq and multiomic analysis for brain datasets, implemented as a reproducible notebook pipeline.
 
-This repository contains analysis code used for a manuscript currently in preparation.
+This repository contains analysis code used for a manuscript currently in preparation. Full reference will be provided when
+published.
 
-This repository is intentionally prepared as a **professional code/notebook release**:
-- analysis logic and notebook contracts are versioned
-- large local data and generated results are excluded
-- reproducible environment snapshots are included
 
 ## What This Pipeline Covers
 
 - Ambient RNA correction
 - Ingest, QC, integration, and annotation
-- Cross-species microglia overlap and homeostatic analysis, including donor-aware MLP-based AD-like score transfer in Notebook 06
+- Cross-species microglia overlap and homeostatic analysis,ML model
 - Counts, DGE, pathway, and GSEA downstream analysis
 - RPPA preprocessing and RNA-RPPA integration
 - TF-GWAS follow-up (Open Targets + Enrichr)
