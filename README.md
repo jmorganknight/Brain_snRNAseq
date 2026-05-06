@@ -70,7 +70,7 @@ flowchart TD
 	N03 --> N04[04 Human-mouse microglia overlap]
 	N04 --> N05[05 Homeostatic human-mouse overlap]
 	N05 --> N06[06 Homeostatic microglia analysis]
-	N06 --> N07[07 Analysis preflight]
+	N03 --> N07[07 Analysis preflight]
 	N07 --> N08[08 Celltype counts and significance]
 	N08 --> N09[09 DGE run once]
 	N09 --> N10[10 DGE visualization]
