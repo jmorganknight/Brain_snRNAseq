@@ -5,31 +5,6 @@ End-to-end single-nucleus RNA-seq and multiomic analysis for brain datasets, imp
 This repository contains analysis code used for a manuscript currently in preparation. Full reference will be provided when
 published.
 
-## Quick Start (Docker)
-
-Use this for the fastest clone-and-run setup on a new machine.
-
-Prerequisites:
-- Docker Engine with Compose (`docker compose`)
-- Access to the required release input files
-
-```bash
-git clone https://github.com/jmorganknight/Brain_snRNAseq.git
-cd Brain_snRNAseq/Analysis
-```
-
-Place required inputs before launching:
-- `adatas/brain_allcells_allgenes.h5ad`
-- `adatas/mouse_microglia_humanized_nb02.h5ad`
-- `RPPA/RPPA_data.csv` (needed for notebook 13 and downstream notebook 14)
-
-Build and run JupyterLab:
-
-```bash
-docker compose up --build
-```
-
-Open JupyterLab at `http://localhost:8888` and use the token shown in the container logs.
 
 Recommended first execution path:
 1. `Notebooks/03_Build_Human_MG_Reference_From_Prater_Green.Rmd`
@@ -174,6 +149,33 @@ bash reproducibility/generate_version_manifests.sh
 ```
 
 ### Docker Packaging (mlenv-aligned)
+
+## Quick Start (Docker)
+
+Use this for the fastest clone-and-run setup on a new machine.
+
+Prerequisites:
+- Docker Engine with Compose (`docker compose`)
+- Access to the required release input files
+
+```bash
+git clone https://github.com/jmorganknight/Brain_snRNAseq.git
+cd Brain_snRNAseq/Analysis
+```
+
+Place required inputs before launching:
+- `adatas/brain_allcells_allgenes.h5ad`
+- `adatas/mouse_microglia_humanized_nb02.h5ad`
+- `RPPA/RPPA_data.csv` (needed for notebook 13 and downstream notebook 14)
+
+Build and run JupyterLab:
+
+```bash
+docker compose up --build
+```
+
+Open JupyterLab at `http://localhost:8888` and use the token shown in the container logs.
+
 
 Starter Docker build file:
 - `docker/Dockerfile.mlenv`
